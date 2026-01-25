@@ -4,10 +4,11 @@ from datetime import datetime
 from telebot import TeleBot
 
 # اقرأ التوكن من متغيرات البيئة (أفضل أمان)
-BOT_TOKEN = os.getenv("BOT_TOKEN", "PUT_YOUR_TOKEN_HERE")
-OWNER_ID = 123456789  # ضع آيدي حسابك هنا
+BOT_TOKEN = os.getenv("8384170308:AAHNFO7Wovq6VSxaZEdxXbVJTA7pvLO9pAA", "")
 
-bot = TeleBot(BOT_TOKEN)
+OWNER_ID = 123456789  #
+
+bot = TeleBot(8384170308:AAHNFO7Wovq6VSxaZEdxXbVJTA7pvLO9pAA)
 
 FILES = {
     "blocked": "blocked.json",
