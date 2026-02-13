@@ -1,0 +1,131 @@
+import sqlite3
+from datetime import datetime
+
+DB_PATH = "bot_data.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id     INTEGER PRIMARY KEY,
+            username    TEXT,
+            first_name  TEXT NOT NULL,
+            last_name   TEXT,
+            created_at  INTEGER DEFAULT (strftime('%s','now')),
+            last_seen   INTEGER DEFAULT (strftime('%s','now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS authorized_users (
+            user_id         INTEGER PRIMARY KEY,
+            authorized_until INTEGER NOT NULL,
+            authorized_by   INTEGER,
+            note            TEXT,
+            created_at      INTEGER DEFAULT (strftime('%s','now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS attack_stats (
+            user_id     INTEGER PRIMARY KEY,
+            attack_count INTEGER NOT NULL DEFAULT 0,
+            last_attack INTEGER,
+            total_duration_sec INTEGER DEFAULT 0
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+def register_or_update_user(user):
+    """user = message.from_user"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    now = int(datetime.now().timestamp())
+
+    c.execute("""
+        INSERT OR REPLACE INTO users 
+        (user_id, username, first_name, last_name, last_seen)
+        VALUES (?, ?, ?, ?, ?)
+    """, (
+        user.id,
+        user.username,
+        user.first_name,
+        user.last_name,
+        now
+    ))
+
+    conn.commit()
+    conn.close()
+
+def get_user_display_name(user):
+    return f"@{user.username}" if user.username else user.first_name
+
+def authorize_user(user_id: int, days: int = 30, authorized_by: int = None, note: str = ""):
+    """Authorize or extend authorization for a user"""
+    from datetime import datetime, timedelta
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    expires = int((datetime.now() + timedelta(days=days)).timestamp())
+
+    c.execute("""
+        INSERT OR REPLACE INTO authorized_users 
+        (user_id, authorized_until, authorized_by, note)
+        VALUES (?, ?, ?, ?)
+    """, (user_id, expires, authorized_by, note or None))
+
+    conn.commit()
+    conn.close()
+    return expires
+
+
+def remove_authorization(user_id: int):
+    """Revoke authorization"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM authorized_users WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    return c.rowcount > 0  # True if something was deleted
+
+
+def is_authorized(user_id: int) -> bool:
+    """Check if user is currently authorized"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        SELECT authorized_until 
+        FROM authorized_users 
+        WHERE user_id = ? AND authorized_until > ?
+    """, (user_id, int(datetime.now().timestamp())))
+    
+    result = c.fetchone()
+    conn.close()
+    return bool(result)
+
+
+def get_authorized_users() -> list:
+    """Return list of currently authorized users with expiration"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    now = int(datetime.now().timestamp())
+    
+    c.execute("""
+        SELECT u.user_id, u.username, u.first_name, a.authorized_until, a.note
+        FROM authorized_users a
+        LEFT JOIN users u ON u.user_id = a.user_id
+        WHERE a.authorized_until > ?
+        ORDER BY a.authorized_until ASC
+    """, (now,))
+    
+    rows = c.fetchall()
+    conn.close()
+    
+    return [
+        {
+            "user_id": r[0],
+            "username": r[1],
+            "first_name": r[2],
+            "expires": datetime.fromtimestamp(r[3]).strftime("%Y-%m-%d %H:%M"),
+            "note": r[4] or "-"
+        }
+        for r in rows
+    ]
